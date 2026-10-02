@@ -7,7 +7,11 @@ This command is used to construct a Diagonal linear system of equation object. T
 
    **Optional Parameter:**
 
-   * **-lumped** - If specified, off-diagonal matrix entries are added (lumped) to the diagonal before solving. This is useful for mass matrix lumping or when converting a coupled system to a diagonal approximation.
+   * **-lumped** (also accepted without the leading dash, as **lumped**) - If specified, off-diagonal matrix entries are added (lumped) to the diagonal before solving. This is useful for mass matrix lumping or when converting a coupled system to a diagonal approximation. Default: off (off-diagonal entries are dropped, not lumped). The token is only recognized if it immediately follows the ``Diagonal``/``MPIDiagonal`` keyword; both the Tcl and Python/OpenSeesPy interpreters parse it the same way.
+
+.. note::
+
+   **OpenSeesSP limitation.** In an OpenSeesSP build (compiled with ``_PARALLEL_PROCESSING``), ``system Diagonal`` is built on top of ``DistributedDiagonalSOE``/``DistributedDiagonalSolver`` instead of the serial ``DiagonalSOE``/``DiagonalDirectSolver`` pair, and that distributed pair has no lumping option at all: the ``-lumped``/``lumped`` token is silently ignored in that configuration. ``system MPIDiagonal`` is not affected -- it always uses ``MPIDiagonalSOE`` (when built with ``_PARALLEL_INTERPRETERS``) or the serial ``DiagonalSOE``, both of which honor ``-lumped``.
 
 A diagonal system stores only the diagonal entries of an n×n matrix **A**, where:
 
@@ -35,9 +39,6 @@ For a consistent mass matrix **M** with entries :math:`m_{ij}`, the lumped diago
 :math:`\tilde{m}_{ii} = \sum_{j=1}^{n} m_{ij}`
 
 All off-diagonal entries are set to zero: :math:`\tilde{m}_{ij} = 0` for :math:`i \neq j`
-
-   \end{bmatrix}
-
 
 .. warning::
 
@@ -78,13 +79,20 @@ This ensures that the total contribution from each element is preserved while cr
 
       # Explicit dynamic analysis with lumped mass
       system Diagonal -lumped
-      
+      ;# equivalently:  system Diagonal lumped
+
       constraints Plain
       numberer Plain
       test NormDispIncr 1.0e-6 10 0
       algorithm Linear
       integrator CentralDifference
       analysis Transient
+
+   **2b. Tcl Code - MPIDiagonal with mass lumping (OpenSeesMP / MPIDiagonal builds)**
+
+   .. code-block:: tcl
+
+      system MPIDiagonal -lumped
 
    **3. Python Code - Basic diagonal system**
 
@@ -102,6 +110,9 @@ This ensures that the total contribution from each element is preserved while cr
       ops.numberer('Plain')
       ops.integrator('CentralDifference')
       ops.analysis('Transient')
+
+      # 'MPIDiagonal' accepts the same '-lumped'/'lumped' flag in OpenSeesPy
+      ops.system('MPIDiagonal', '-lumped')
 
    **5. Python Code - Complete explicit dynamics example**
 
@@ -123,6 +134,49 @@ This ensures that the total contribution from each element is preserved while cr
       # Time step (must satisfy CFL condition)
       dt = 0.0001
       ops.analyze(1000, dt)
+
+.. admonition:: Worked example - ``-lumped`` recovers the correct total mass
+
+   A single 1-D ``Truss`` element (2 nodes, 1 DOF each, length :math:`L=1`,
+   area :math:`A=1`, density :math:`\rho = 6`) is built with a *consistent*
+   mass matrix (``-cMass 1``):
+
+   :math:`M = \frac{\rho A L}{6}\begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix} = \begin{bmatrix} 2 & 1 \\ 1 & 2 \end{bmatrix}`
+
+   A constant nodal force :math:`F = 6` is applied at both nodes (the force
+   that a uniform acceleration :math:`a_0 = 2` produces through the
+   row-summed/lumped mass, :math:`F = \tfrac{\rho A L}{2}\, a_0`), and a
+   single step of ``integrator ExplicitDifference`` is taken from rest, so
+   that the analysis solves :math:`M a = F` through whichever ``system
+   Diagonal`` variant is active:
+
+   * ``system Diagonal`` (no ``-lumped``): only the diagonal entries of
+     :math:`M` are kept (:math:`A_{ii} = M_{ii} = 2`), so the solver only
+     "sees" :math:`2\times 2 = 4` of the physical total mass
+     :math:`\rho A L = 6`. The computed acceleration is
+     :math:`a = F / M_{ii} = 6/2 = 3`, 50% higher than the correct value.
+   * ``system Diagonal -lumped``: the off-diagonal entries are folded onto
+     the diagonal (:math:`A_{ii} = 2 + 1 = 3`, the full row sum), so the
+     solver sees the whole physical mass (:math:`2 \times 3 = 6`) and
+     recovers :math:`a = F / 3 = 2`, matching :math:`a_0` exactly.
+
+   :download:`example_lumped_explicit.tcl` builds and solves both cases and
+   checks the result:
+
+   .. code-block:: text
+
+      system Diagonal (no -lumped, off-diagonals dropped):
+        node 1 accel = 3.0   node 2 accel = 3.0   (expected 2.0)
+        effective total mass seen by solver = 4.0   (expected 6.0)
+
+      system Diagonal -lumped (row-sum lumping):
+        node 1 accel = 2.0   node 2 accel = 2.0   (expected 2.0)
+        effective total mass seen by solver = 6.0   (expected 6.0)
+
+      PASS: system Diagonal -lumped conserves total mass and recovers a0=2.0 exactly.
+
+   Run with ``OpenSees example_lumped_explicit.tcl``; the printed values above
+   were produced by that exact script.
 
 Code Developed by: |fmk|
 
