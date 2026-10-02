@@ -96,6 +96,7 @@ The following subsections contain information about **$eleType** and the number 
    :maxdepth: 1
 
    elements/Tri31
+   elements/SixNodeTri
    elements/ShellDKGT
    elements/ShellNLDKGT
    elements/ASDShellT3
