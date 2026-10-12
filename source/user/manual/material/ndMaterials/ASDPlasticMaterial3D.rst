@@ -28,14 +28,20 @@ The complete command looks as follows::
          $ModelParameters2 $$double_value2 
          #... (depends on how many model parameters the particular selected model has) 
       End_Model_Parameters 
-      Begin_Integration_Options 
-         f_relative_tol $double_value 
-         stress_relative_tol $double_value 
-         n_max_iterations $int_value 
-         return_to_yield_surface (0 or 1) 
-         method (string) : Forward_Euler | Forward_Euler_Subincrement | Backward_Euler | Backward_Euler_LineSearch | Modified_Euler_Error_Control | Runge_Kutta_45_Error_Control
-         tangent_operator (string) : Elastic | Numerical_Algorithmic_FirstOrder | Numerical_Algorithmic_SecondOrder | Continuum | Secant
+      Begin_Integration_Options
+         f_absolute_tol $double_value
+         stress_absolute_tol $double_value
+         n_max_iterations $int_value
+         return_to_yield_surface (string) : Disabled | One_Step_Return | Iterative_Return
+         integration_method (string) : Forward_Euler | Forward_Euler_Subincrement | Backward_Euler | Backward_Euler_LineSearch | Modified_Euler_Error_Control | Runge_Kutta_45_Error_Control | Runge_Kutta_45_Error_Control_old
+         tangent_type (string) : Elastic | Numerical_Algorithmic_FirstOrder | Numerical_Algorithmic_SecondOrder | Continuum | Secant
+         rk45_dT_min $double_value
+         rk45_niter_max $int_value
       End_Integration_Options
+
+Alternatively, list every ``$YieldFunctionType``/``$PlasticFlowType``/``$ElasticityType``/``$IV_TYPE`` combination that the factory was compiled with, optionally filtered by yield function name::
+
+   nDMaterial ASDPlasticMaterial3D $tag list <$YieldFunctionType>
 
 
 Explanation
@@ -71,12 +77,21 @@ Explanation
 
 		InternalVariable1(HardeningFunction1):InternalVariable2(HardeningFunction2):
 
-	Internal variables are required for the yield function and plastic flow direction (see speficic components for details), and all internal variables must be provided with their hardening function otherwise instantiation fails. 
+	Internal variables are required for the yield function and plastic flow direction (see speficic components for details), and all internal variables must be provided with their hardening function otherwise instantiation fails.
+
+	If the yield function and the plastic flow direction declare the exact same internal-variable/hardening-function combination (as, for example, ``HoekBrown_YF`` and ``HoekBrown_PF``, which both use a single unused ``BackStress`` placeholder), the two collapse into a single internal variable and the ``$IV_TYPE`` string only lists it once, e.g. ``BackStress(NullHardeningTensorFunction):`` (one entry, one trailing colon) rather than the same entry repeated twice.
 
 .. admonition:: Note
 
-    Any internal variable or parameter that is not specified is set to zero by default.  
+    Any internal variable or parameter that is not specified is set to zero by default.
 
+.. admonition:: Listing available combinations
+
+   Since the valid ``$YieldFunctionType``/``$PlasticFlowType``/``$ElasticityType``/``$IV_TYPE`` combinations depend on how the material was compiled (see ``gen_ASD_material_definitions_CPP.py``), you can list them by passing ``list`` as the ``$YieldFunctionType`` argument, optionally followed by a yield function name to filter the (possibly very long) output::
+
+      nDMaterial ASDPlasticMaterial3D $tag list <$YieldFunctionType>
+
+   This prints every compiled ``YF``/``PF``/``EL``/``IV`` combination (or only those matching the given ``$YieldFunctionType`` if provided) to the console, without creating a material. Note that the factory generates the full cross-product of yield functions and plastic-flow directions for the "standard" models (e.g. you will also see entries pairing ``HoekBrown_YF`` with ``VonMises_PF``, which is not a physically meaningful combination), so check that both the ``YF`` *and* ``PF`` names in a listed entry are the ones you intend to use. The ``$IV_TYPE`` string printed for each entry must be copied exactly, including the trailing colon.
 
 .. toctree::
    :caption: Arguments detailed description
@@ -123,11 +138,16 @@ Advanced Integration Methods
    ``Backward_Euler``, "Implicit backward Euler method for better stability"
    ``Backward_Euler_LineSearch``, "Backward Euler with line search for enhanced convergence"
    ``Modified_Euler_Error_Control``, "Modified Euler method with adaptive error control"
-   ``Runge_Kutta_45_Error_Control``, "4th/5th order Runge-Kutta with adaptive error control (default)"
+   ``Runge_Kutta_45_Error_Control``, "4th/5th order Runge-Kutta with adaptive error control"
+   ``Runge_Kutta_45_Error_Control_old``, "Older implementation of the RK45 error-controlled integrator, kept for backward compatibility"
 
 .. admonition:: Integration Method Selection
 
-   The integration method is selected in the ``Begin_Integration_Options`` block using the ``method`` parameter. If not specified, ``Runge_Kutta_45_Error_Control`` is used by default.
+   The integration method is selected in the ``Begin_Integration_Options`` block using the ``integration_method`` keyword. If not specified, **Backward_Euler** is used by default.
+
+   .. note::
+
+      Older versions (and older documentation) called this keyword ``method``. The parser only recognizes ``integration_method``; ``method`` is silently ignored and the default is used instead.
 
 
 .. _`ASDPlasticMaterial3DTangentOperators`:
@@ -149,7 +169,11 @@ Tangent Operator Types
 
 .. admonition:: Tangent Operator Selection
 
-   The tangent operator type is selected in the ``Begin_Integration_Options`` block using the ``tangent_operator`` parameter. If not specified, an appropriate default is selected based on the integration method.
+   The tangent operator type is selected in the ``Begin_Integration_Options`` block using the ``tangent_type`` keyword. If not specified, **Secant** is used by default, regardless of the chosen integration method.
+
+   .. note::
+
+      As with ``integration_method``/``method`` above, older versions called this keyword ``tangent``; only ``tangent_type`` is read.
 
 
 .. _`ASDPlasticMaterial3DIntegrationOptions`:
@@ -157,22 +181,28 @@ Tangent Operator Types
 Integration Options
 """""""""""""""""""
 
-.. csv-table:: 
+.. csv-table::
    :header: "Parameter", "Type", "Description"
    :widths: 10, 10, 40
 
-   $f_relative_tol, |float|, "Relative tolerance to evaluate the yield function crossing."
-   $stress_relative_tol, |float|, "Tolerance for the convergece of the integration algorithm."
-   $n_max_iterations, |integer|, "Maximum number of iterations for constitutive integration."
-   $return_to_yield_surface, |integer|, "Whether to apply a return to yield surface algorithm after integration convergence (0 or 1)."
-   $method, |string|, "Constitutive integration method. See :ref:`ASDPlasticMaterial3DIntegrationMethods` for options"
-   $tangent_operator, |string|, "Tangent operator computation method. See :ref:`ASDPlasticMaterial3DTangentOperators` for options"
+   $f_absolute_tol, |float|, "Absolute tolerance on the yield function value used for yield-surface-crossing detection. Default: 1e-6."
+   $stress_absolute_tol, |float|, "Absolute tolerance for the convergence of the (implicit) constitutive integration algorithm. Default: 1e-6."
+   $n_max_iterations, |integer|, "Maximum number of iterations for constitutive integration. Default: 100."
+   $return_to_yield_surface, |string|, "Whether/how to correct the stress back onto the yield surface after integration. One of ``Disabled``, ``One_Step_Return`` or ``Iterative_Return``. Any other value is treated as ``One_Step_Return``. Default: ``One_Step_Return``."
+   $integration_method, |string|, "Constitutive integration method. See :ref:`ASDPlasticMaterial3DIntegrationMethods` for options. Default: ``Backward_Euler``."
+   $tangent_type, |string|, "Tangent operator computation method. See :ref:`ASDPlasticMaterial3DTangentOperators` for options. Default: ``Secant``."
+   $rk45_dT_min, |float|, "Minimum pseudo-time sub-increment allowed for the ``Runge_Kutta_45_Error_Control`` family of methods. Default: 1e-2."
+   $rk45_niter_max, |integer|, "Maximum number of sub-increments allowed for the ``Runge_Kutta_45_Error_Control`` family of methods. Default: 110."
 
-The default integration method is **Runge_Kutta_45_Error_Control** that uses the classical RK45 ODE integration algorithm employing a 4-th order prediction of the stress increment together with a 5-order prediction to estimate the integration error. In this scheme the strain increment provided by the element to the Gauss point is sub-divided into sub-increments, a process which is automated such that the provided **$stress_relative_tol** is met. This method is provided as a robust standard method which is applicable across all possible combinations of components, although there are possibly better approaches for specific cases which might become available in the future. 
+.. admonition:: Keyword names
 
-The different parameters are activated depending on the integration algorithm selected. The *Forward_Euler* family algorithms only uses the **$return_to_yield_surface** parameter, while **Runge_Kutta_45_Error_Control** uses the rest. 
+   The keywords actually recognized inside ``Begin_Integration_Options`` ... ``End_Integration_Options`` are exactly as listed above (``f_absolute_tol``, ``stress_absolute_tol``, ``n_max_iterations``, ``return_to_yield_surface``, ``integration_method``, ``tangent_type``, ``rk45_dT_min``, ``rk45_niter_max``). Any other keyword is silently ignored. Older names such as ``f_relative_tol``/``stress_relative_tol``/``method``/``tangent_operator`` are **not** recognized by the parser.
 
-The **$f_relative_tol** parameter comes into play when the yield surface is being crossed, that is, when the previous (committed) stress is within the yield surface and the elastic prediction of the stress increment brings the stress state beyond the yield surface. In that case, an elastic increment occurs until the yield surface is touched which requires iterations with the Brent root finding algorithm. This is used by all currently available integration methods. 
+The default integration method is **Backward_Euler** (an implicit scheme) with a **Secant** tangent operator; this was changed from the previous defaults of ``Runge_Kutta_45_Error_Control`` with an ``Elastic`` tangent. ``Runge_Kutta_45_Error_Control`` remains available and uses the classical RK45 ODE integration algorithm, employing a 4th-order prediction of the stress increment together with a 5th-order prediction to estimate the integration error. In this scheme the strain increment provided by the element to the Gauss point is sub-divided into sub-increments, a process which is automated such that the provided **$stress_absolute_tol** is met, subject to the ``rk45_dT_min``/``rk45_niter_max`` limits. This method is a robust standard method applicable across all possible combinations of components, although other approaches may be preferable for specific cases.
+
+The different parameters are activated depending on the integration algorithm selected. The *Forward_Euler* family algorithms only use the **$return_to_yield_surface** parameter, while the error-controlled and backward-Euler families use the rest.
+
+The **$f_absolute_tol** parameter comes into play when the yield surface is being crossed, that is, when the previous (committed) stress is within the yield surface and the elastic prediction of the stress increment brings the stress state beyond the yield surface. In that case, an elastic increment occurs until the yield surface is touched which requires iterations with the Brent root finding algorithm. This is used by all currently available integration methods.
 
 
 .. _`ASDPlasticMaterial3DOtherFeatures`:
@@ -188,8 +218,12 @@ Other Features
        :header: "Parameter", "Type", "Description"
        :widths: 10, 10, 40
 
-       ``MassDensity``, scalar, Defines the material mass density :math:`\rho`. 
-       ``InitialP0``, scalar, Defines the initial mean pressure at which material constants will be evaluated at the first step.  
+       ``MassDensity``, scalar, Defines the material mass density :math:`\rho`.
+       ``InitialP0``, scalar, "Stress value assigned to all three normal stress components (:math:`\sigma_{11}=\sigma_{22}=\sigma_{33}=p_0`, shear components zero) the first time the material receives a trial strain, as long as the stress has not already been set some other way (see ``stress_set_externally`` below). Since stresses use the tension-positive convention, use a *negative* value for a compressive confinement."
+
+.. note::
+
+   ``InitialP0`` is mainly intended to nudge the material away from the exactly-zero-stress state at the start of an analysis (all of the examples below use a tiny ``-1.0e-3``), which some yield surfaces are singular at. Using it to directly jump to a large confinement (instead of reaching that state through an actual loading history) was found, in testing for this documentation, to cause convergence difficulties for several yield-function/elasticity combinations; prefer applying a real initial loading stage if a specific non-trivial confinement is required.
 
 
 .. admonition:: Enhanced Responses  (`setResponse` and `getResponse` behavior)
@@ -199,11 +233,13 @@ Other Features
     * *Enhanced strain measures*. ``VolStrain`` for volumetric strain (:math:`ε_v = ε_{11}+ε_{22}+ε_{33}`), ``J2Strain`` for J2 invariant of strain.
     * *Internal variables*. You can request any and all internal variables by their specific name as an output. 
 
-.. admonition:: Advanced `setParameter` behavior 
+.. admonition:: Advanced `setParameter` behavior
 
-   * *State variable updates*. Can update stress, strain, plasticStrain and their trial variants directly.
+   * *State variable updates*. Can update ``stress``, ``strain``, ``plasticStrain`` and their ``trial...`` variants directly.
    * *Parameter updates*. Can update any model parameter by name using the generic parameter system.
    * *Special K0 operations*. ``K02D`` and ``K03D`` for setting K0 stress states in 2D/3D conditions.
+   * *Stress increments*. ``trialStressIncrement`` adds the same value to the trial ``XX``, ``YY`` and ``ZZ`` normal stress components simultaneously; ``trialStressIncrementXX``/``YY``/``ZZ``/``XY``/``YZ``/``XZ`` add to one specific trial stress component. ``commitStressIncrementXX``/``YY``/``ZZ``/``XY``/``YZ``/``XZ`` do the same on the *committed* stress (there is no plain, all-components ``commitStressIncrement``, unlike the trial version).
+   * *Effect on InitialP0*. Setting ``stress``, ``strain``, ``trialStrain``, ``trialStress``, or any of the ``trialStressIncrement...``/``commitStressIncrement...`` targets above marks the material as having its stress "set externally"; this disables the automatic ``InitialP0`` assignment on the first call to ``setTrialStrain`` (see the ``InitialP0`` note above) so that the externally imposed stress state is not silently overwritten.
 
 .. admonition:: Internal Variable Management
 
@@ -231,19 +267,19 @@ Key implementation features:
 Example
 """""""
 
-The following example defines an instance of ``ASDPlasticMaterial3D`` with a Drucker-Prager yield function, a constant dilatancy plastic-flow direction, elastic-isotropic elasticity law and linear hardening for both internal variables, using advanced integration options.
+The following example defines an instance of ``ASDPlasticMaterial3D`` with a Drucker-Prager yield function, a (non-associated) Drucker-Prager plastic-flow direction, elastic-isotropic elasticity law and linear hardening for both internal variables, using advanced integration options. This exact command (material creation plus a one-element analysis) was run with the ``OpenSees`` binary and completes without error.
 
-.. admonition:: TCL code  
+.. admonition:: TCL code
 
     .. code-block:: none
 
         nDMaterial ASDPlasticMaterial3D 1 \
             DruckerPrager_YF \
-            ConstantDilatancy_PF \
+            DruckerPrager_PF \
             LinearIsotropic3D_EL \
-            BackStress(TensorLinearHardeningFunction):VonMisesRadius(ScalarLinearHardeningFunction): \
+            BackStress(TensorLinearHardeningFunction):DP_cohesion(ScalarLinearHardeningFunction): \
             Begin_Internal_Variables \
-                VonMisesRadius 1. \
+                DP_cohesion 1. \
                 BackStress 0. 0. 0. 0. 0. 0. \
             End_Internal_Variables \
             Begin_Model_Parameters \
@@ -251,29 +287,31 @@ The following example defines an instance of ``ASDPlasticMaterial3D`` with a Dru
                 PoissonsRatio 0.3 \
                 TensorLinearHardeningParameter 1e6 \
                 ScalarLinearHardeningParameter 1e4 \
-                Dilatancy 0.02 \
+                DP_xi_c 1e4 \
+                DP_eta 0.5 \
+                DP_etabar 0.3 \
                 MassDensity 2000. \
             End_Model_Parameters \
             Begin_Integration_Options \
-                method Runge_Kutta_45_Error_Control \
-                tangent_operator Continuum \
-                f_relative_tol 1e-8 \
-                stress_relative_tol 1e-6 \
+                integration_method Runge_Kutta_45_Error_Control \
+                tangent_type Continuum \
+                f_absolute_tol 1e-8 \
+                stress_absolute_tol 1e-6 \
                 n_max_iterations 50 \
-                return_to_yield_surface 1 \
+                return_to_yield_surface One_Step_Return \
             End_Integration_Options
 
-.. admonition:: Python code  
+.. admonition:: Python code
 
     .. code-block:: python
 
-        ops.nDMaterial("ASDPlasticMaterial3D", 1, 
+        ops.nDMaterial("ASDPlasticMaterial3D", 1,
         "DruckerPrager_YF",
-        "ConstantDilatancy_PF",
+        "DruckerPrager_PF",
         "LinearIsotropic3D_EL",
-        "BackStress(TensorLinearHardeningFunction):VonMisesRadius(ScalarLinearHardeningFunction):",
+        "BackStress(TensorLinearHardeningFunction):DP_cohesion(ScalarLinearHardeningFunction):",
         "Begin_Internal_Variables",
-            "VonMisesRadius", 1.,
+            "DP_cohesion", 1.,
             "BackStress", 0., 0., 0., 0., 0., 0.,
         "End_Internal_Variables",
         "Begin_Model_Parameters",
@@ -281,105 +319,148 @@ The following example defines an instance of ``ASDPlasticMaterial3D`` with a Dru
             "PoissonsRatio", 0.3,
             "TensorLinearHardeningParameter", 1e6,
             "ScalarLinearHardeningParameter", 1e4,
-            "Dilatancy", 0.02,
+            "DP_xi_c", 1e4,
+            "DP_eta", 0.5,
+            "DP_etabar", 0.3,
             "MassDensity", 2000.,
         "End_Model_Parameters",
         "Begin_Integration_Options",
-            "method", "Runge_Kutta_45_Error_Control",
-            "tangent_operator", "Continuum",
-            "f_relative_tol", 1e-8,
-            "stress_relative_tol", 1e-6,
+            "integration_method", "Runge_Kutta_45_Error_Control",
+            "tangent_type", "Continuum",
+            "f_absolute_tol", 1e-8,
+            "stress_absolute_tol", 1e-6,
             "n_max_iterations", 50,
-            "return_to_yield_surface", 1,
+            "return_to_yield_surface", "One_Step_Return",
         "End_Integration_Options",
         )
+
+.. note::
+
+   This page previously showed ``DruckerPrager_YF`` paired with ``ConstantDilatancy_PF`` and an internal variable named ``VonMisesRadius``. Neither exists: the scalar internal variable registered for ``DruckerPrager_YF``/``DruckerPrager_PF`` is named ``DP_cohesion`` (``YieldStress`` is the name used for :ref:`VonMises_YF`/:ref:`VonMises_PF` instead), and ``ConstantDilatancy_PF`` -- while still present in the source tree -- is currently commented out of ``gen_ASD_material_definitions_CPP.py`` and therefore cannot be instantiated (see the note on :ref:`ConstantDilatancy_PF`). ``DruckerPrager_PF``'s own ``DP_etabar`` parameter plays the equivalent "constant dilatancy" role here.
 
 Example: Using Enhanced Response Queries
 """"""""""""""""""""""""""""""""""""""""
 
-To access the enhanced response capabilities of ``ASDPlasticMaterial3D``, you can use recorders with the following response queries:
+To access the enhanced response capabilities of ``ASDPlasticMaterial3D``, these are queried as **material** sub-responses of the element (not as node responses): ``recorder Element -ele $eleTag ... material $matNum $respName`` (here assuming the element has a single material, so ``$matNum`` is 1). This was verified with the ``DruckerPrager_YF``/``DruckerPrager_PF`` example above (material tag 1 on element 1):
 
-.. admonition:: TCL Recorder Example  
+.. admonition:: TCL Recorder Example
 
     .. code-block:: tcl
 
         # Basic responses
-        recorder Node -file stress.out -time -node 1 -dof 1 2 3 stress
-        recorder Node -file strain.out -time -node 1 -dof 1 2 3 strain
-        
-        # Enhanced stress measures  
-        recorder Node -file p_stress.out -time -node 1 -dof 1 PStress
-        recorder Node -file j2_stress.out -time -node 1 -dof 1 J2Stress
-        recorder Node -file eq_pstrain.out -time -node 1 -dof 1 eqpstrain
-        
+        recorder Element -ele 1 -file stress.out -time material 1 stress
+        recorder Element -ele 1 -file strain.out -time material 1 strain
+
+        # Enhanced stress measures
+        recorder Element -ele 1 -file p_stress.out -time material 1 PStress
+        recorder Element -ele 1 -file j2_stress.out -time material 1 J2Stress
+        recorder Element -ele 1 -file eq_pstrain.out -time material 1 eqpstrain
+
         # Enhanced strain measures
-        recorder Node -file vol_strain.out -time -node 1 -dof 1 VolStrain  
-        recorder Node -file j2_strain.out -time -node 1 -dof 1 J2Strain
-        
+        recorder Element -ele 1 -file vol_strain.out -time material 1 VolStrain
+        recorder Element -ele 1 -file j2_strain.out -time material 1 J2Strain
+
         # Internal variable by name
-        recorder Node -file backstress.out -time -node 1 -dof 1 BackStress
-        recorder Node -file radius.out -time -node 1 -dof 1 VonMisesRadius
+        recorder Element -ele 1 -file backstress.out -time material 1 BackStress
+        recorder Element -ele 1 -file cohesion.out -time material 1 DP_cohesion
 
 Example: Parameter Updates During Analysis
 """""""""""""""""""""""""""""""""""""""""""""
 
-``ASDPlasticMaterial3D`` supports parameter updates during analysis:
+``ASDPlasticMaterial3D`` supports parameter updates during analysis through the generic Tcl ``setParameter -value $value -ele $eleTag $paramName`` command, which forwards a single scalar value to the material's ``setParameter``/``updateParameter`` (element 1 below is assumed to use material tag 1):
 
-.. admonition:: TCL Parameter Update  
+.. admonition:: TCL Parameter Update
 
     .. code-block:: tcl
 
         # Update model parameters
-        setParameter 1 YoungsModulus 2e8
-        setParameter 1 PoissonsRatio 0.25
-        setParameter 1 ScalarLinearHardeningParameter 2e4
-        
+        setParameter -value 2e8 -ele 1 YoungsModulus
+        setParameter -value 0.25 -ele 1 PoissonsRatio
+        setParameter -value 2e4 -ele 1 ScalarLinearHardeningParameter
+
         # Update internal variables
-        setParameter 1 VonMisesRadius 1.5
-        
-        # Update stress state (for restart or initialization)
-        setParameter 1 stress [list 1e6 1e6 1e6 0 0 0]
+        setParameter -value 1.5 -ele 1 DP_cohesion
+
+        # Set the (committed and trial) stress state one component at a time
+        # (this also marks the material's stress as "set externally", see the
+        # InitialP0 note above) -- here setting an isotropic 1 MPa stress state:
+        setParameter -value 1e6 -ele 1 commitStressIncrementXX
+        setParameter -value 1e6 -ele 1 commitStressIncrementYY
+        setParameter -value 1e6 -ele 1 commitStressIncrementZZ
+
+.. note::
+
+   The plain Tcl ``setParameter`` command only carries a single scalar value (via ``-value``), so it cannot be used to set a full 6-component ``stress``/``strain``/``trialStress``/``trialStrain`` state in one call, even though those names are accepted by the material's own ``setParameter``/``updateParameter`` (which do accept a full ``Vector`` when driven directly, e.g. from Python through the lower-level parameter API). From Tcl, use the per-component ``trialStressIncrement{XX,YY,ZZ,XY,YZ,XZ}``/``commitStressIncrement{XX,YY,ZZ,XY,YZ,XZ}`` targets instead, one scalar ``setParameter`` call per component.
 
 Example: Integration Method Selection
 """"""""""""""""""""""""""""""""""""""""
 
 Different integration methods for specific applications:
 
-.. admonition:: Robust Integration (Recommended for most cases)  
+.. admonition:: Default / Robust Integration (Recommended for most cases)
 
     .. code-block:: tcl
 
         Begin_Integration_Options
-            method Runge_Kutta_45_Error_Control
-            tangent_operator Continuum
-            f_relative_tol 1e-8
-            stress_relative_tol 1e-6
-            n_max_iterations 50
-            return_to_yield_surface 1
-        End_Integration_Options
-
-.. admonition:: Fast Integration (For large models)  
-
-    .. code-block:: tcl
-
-        Begin_Integration_Options
-            method Forward_Euler_Subincrement  
-            tangent_operator Elastic
-            return_to_yield_surface 1
-        End_Integration_Options
-
-.. admonition:: High Accuracy Integration (For research)  
-
-    .. code-block:: tcl
-
-        Begin_Integration_Options
-            method Backward_Euler_LineSearch
-            tangent_operator Numerical_Algorithmic_SecondOrder
-            f_relative_tol 1e-12
-            stress_relative_tol 1e-10
+            integration_method Backward_Euler
+            tangent_type Secant
+            f_absolute_tol 1e-6
+            stress_absolute_tol 1e-6
             n_max_iterations 100
-            return_to_yield_surface 1
+            return_to_yield_surface One_Step_Return
         End_Integration_Options
+
+.. admonition:: Error-Controlled Integration (alternative, applicable across all component combinations)
+
+    .. code-block:: tcl
+
+        Begin_Integration_Options
+            integration_method Runge_Kutta_45_Error_Control
+            tangent_type Continuum
+            f_absolute_tol 1e-8
+            stress_absolute_tol 1e-6
+            n_max_iterations 50
+            return_to_yield_surface One_Step_Return
+        End_Integration_Options
+
+.. admonition:: Fast Integration (For large models)
+
+    .. code-block:: tcl
+
+        Begin_Integration_Options
+            integration_method Forward_Euler_Subincrement
+            tangent_type Elastic
+            return_to_yield_surface One_Step_Return
+        End_Integration_Options
+
+.. admonition:: High Accuracy Integration (For research)
+
+    .. code-block:: tcl
+
+        Begin_Integration_Options
+            integration_method Backward_Euler_LineSearch
+            tangent_type Numerical_Algorithmic_SecondOrder
+            f_absolute_tol 1e-12
+            stress_absolute_tol 1e-10
+            n_max_iterations 100
+            return_to_yield_surface One_Step_Return
+        End_Integration_Options
+
+
+Verified Examples: HoekBrown_YF, MohrCoulomb_YF, DuncanChang_EL
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+The following scripts were run with the ``OpenSees`` binary against a hand (closed-form) solution, printing the computed ("got") value next to the expected one:
+
+* :download:`ASDPlasticMaterial3D_HoekBrownExample.tcl` -- unconfined compression (:math:`\sigma_3=0`) of a single 8-node brick with :ref:`HoekBrown_YF`/:ref:`HoekBrown_PF`, :math:`GSI=50`, :math:`m_i=10`, :math:`D=0`, zero dilatancy (``HB_mb_psi 0``), using the default ``Backward_Euler``/``Secant`` integration options. Checked against the rock-mass unconfined compressive strength :math:`\sigma_{cm}=\sigma_{ci}\,s^a`: got :math:`3.0145\times10^6` Pa vs. expected :math:`3.0114\times10^6` Pa (0.10% relative error).
+* :download:`ASDPlasticMaterial3D_MohrCoulombExample.tcl` -- the same unconfined-compression setup with ``MohrCoulomb_YF``/``MohrCoulomb_PF`` (:math:`\varphi=30^\circ`, :math:`c=10` kPa), checked against :math:`\sigma_{ucs}=2c\cos\varphi/(1-\sin\varphi)`: got :math:`3.4645\times10^4` Pa vs. expected :math:`3.4641\times10^4` Pa (0.01% relative error).
+* :download:`ASDPlasticMaterial3D_DuncanChangExample.tcl` -- instantiates ``MohrCoulomb_YF``/``MohrCoulomb_PF``/:ref:`DuncanChang_EL` and lets the material's own ``Print()`` echo each of the four ``DuncanChang_EL`` parameters; running it confirms ``ReferenceYoungsModulus``, ``ReferencePressure``, ``DuncanChang_MaxSigma3`` and ``DuncanChang_n`` are each read back under their own distinct name, rather than colliding with ``YoungsModulus``.
+
+Both compression examples use ``test NormDispIncr 1e-8 100`` with a 3D single-element model under roller/pin boundary conditions, incrementally loaded in displacement control until a stress peak is reached.
+
+.. note::
+
+   The ``StiffSoilShear_*``/``StiffSoilCap_*`` (Hardening-Soil) components (see :ref:`StiffSoilShear_YF`/:ref:`StiffSoilCap_YF`) were only checked for successful instantiation and a basic single-step run for this documentation; no analytical verification of their stiffness or hardening response is claimed. An attempt to verify the elastic unload/reload stiffness against :ref:`StiffSoil_EL`'s :math:`E_{ur}` formula directly ran into convergence difficulties with this version of the solver when imposing a realistic loading/unloading history or a large ``InitialP0`` confinement in a single step.
 
 
 Code Developed by: **José A. Abell** (UANDES, Chile and ASDEA), **Guido Camata** and **Massimo Petracca**  (ASDEA Software, Italy).

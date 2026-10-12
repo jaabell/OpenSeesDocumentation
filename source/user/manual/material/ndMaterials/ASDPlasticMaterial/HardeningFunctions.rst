@@ -1,9 +1,10 @@
 .. _`HardeningFunctions`:
 
 Hardening Functions
-^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^
 
 Internal variables evolve accoding with their own laws to provide plastic hardening to the constitutive model. These laws are specified as hardening functions that specify an ODE for the evolution of the internal variable. Two types of internal variable are considered: scalar-valued and tensor-valued internal variables. These evolve in the following manner:
+
 .. math::
    \newcommand{\vec}[1]{\boldsymbol{#1}}
    \newcommand{\state}{\sigma, \left\lbrace iv \right\rbrace, \left\lbrace param \right\rbrace }
@@ -51,13 +52,13 @@ Where :math:`\vec{m}` is the plastic flow direction computed at the current stat
    * Isotropic hardening/softening behavior
    * Simple calibration with single parameter
    
-   Monitor scalar internal variable evolution:
-   
+   Monitor scalar internal variable evolution (e.g. the ``YieldStress`` internal variable of :ref:`VonMises_YF`, assuming material tag 1 is attached to element 1):
+
    .. code-block:: tcl
-   
-       recorder Node -file radius.out -time -node 1 -dof 1 VonMisesRadius
+
+       recorder Element -ele 1 -file yieldstress.out -time material 1 YieldStress
        # Update hardening parameter during analysis
-       setParameter 1 ScalarLinearHardeningParameter 5e6
+       setParameter -value 5e6 -ele 1 ScalarLinearHardeningParameter
 
 
 .. _TensorValuedHF:
@@ -94,13 +95,13 @@ Where :math:`\vec{m}_{dev}` is the deviatoric part of the plastic flow direction
    
    The backstress evolves in the direction of deviatoric plastic flow, providing Bauschinger effect modeling.
    
-   Monitor tensor internal variable evolution:
-   
+   Monitor tensor internal variable evolution (assuming material tag 1 is attached to element 1):
+
    .. code-block:: tcl
-   
-       recorder Node -file backstress.out -time -node 1 -dof 1 2 3 4 5 6 BackStress
+
+       recorder Element -ele 1 -file backstress.out -time material 1 BackStress
        # Update hardening parameter during analysis
-       setParameter 1 TensorLinearHardeningParameter 0.01
+       setParameter -value 0.01 -ele 1 TensorLinearHardeningParameter
 
 **ArmstrongFrederickHardeningFunction**
 
@@ -146,13 +147,75 @@ Setting :math:`c_r = 0` results in linear hardening.
    .. math::
       \Vert \vec{T} \Vert = \sqrt{\dfrac{2}{3}} \dfrac{h_a}{c_r}
    
-   Monitor non-linear hardening:
-   
+   Monitor non-linear hardening (assuming material tag 1 is attached to element 1):
+
    .. code-block:: tcl
-   
-       recorder Node -file backstress.out -time -node 1 -dof 1 2 3 4 5 6 BackStress
-       recorder Node -file eqpstrain.out -time -node 1 -dof 1 eqpstrain
+
+       recorder Element -ele 1 -file backstress.out -time material 1 BackStress
+       recorder Element -ele 1 -file eqpstrain.out -time material 1 eqpstrain
        # Update hardening parameters during analysis
-       setParameter 1 AF_ha 1e8
-       setParameter 1 AF_cr 100
+       setParameter -value 1e8 -ele 1 AF_ha
+       setParameter -value 100 -ele 1 AF_cr
+
+**NullHardeningScalarFunction** / **NullHardeningTensorFunction**
+
+Trivial hardening functions that always return zero (:math:`h_s=0` / :math:`\vec{h}_T=\vec{0}`), i.e. the paired internal variable never evolves. These are used whenever an internal variable is required by the type system but is not actually meant to harden, e.g. the unused ``BackStress`` placeholder required by ``MohrCoulomb_YF``/``MohrCoulomb_PF`` and by :ref:`HoekBrown_YF`/:ref:`HoekBrown_PF` (both of which are perfectly-plastic criteria with no internal hardening state).
+
+.. admonition:: Parameters required
+
+   None.
+
+
+.. _StiffSoilHF:
+
+Hardening Functions for the Hardening-Soil (StiffSoil) Model
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+These hardening functions are specific to the ``StiffSoilShear_*``/``StiffSoilCap_*`` components (see :ref:`YieldFunctionType`/:ref:`PlasticFlowType`).
+
+**StiffSoilShearHardening**
+
+Hardening function for the ``EpsQpShear`` (plastic deviatoric strain) internal variable used by :ref:`StiffSoilShear_YF`. It accumulates the equivalent deviatoric part of the plastic flow direction:
+
+.. math::
+   h = \sqrt{\dfrac{2}{3}} \left\lVert \mathrm{dev}(\vec{m}) \right\rVert
+
+.. admonition:: Parameters required
+
+   None.
+
+**StiffSoilCapHardening**
+
+Nonlinear hardening function for the ``CapPressure`` internal variable used by :ref:`StiffSoilCap_YF`, following the PLAXIS cap hardening law :math:`\varepsilon_v^{p\text{-cap}} = (\beta/(1-m))(p_c/p_{ref})^{1-m}` differentiated to give:
+
+.. math::
+   h = \dfrac{p_{ref}}{\beta}\left(\dfrac{p_c}{p_{ref}}\right)^m \left\lvert \mathrm{tr}(\vec{m}) \right\rvert
+
+:math:`p_c` is floored at :math:`0.1\,p_{ref}`, and :math:`h` is forced to zero whenever the plastic flow direction indicates dilation/unloading rather than compaction, so the cap can only expand, never shrink.
+
+.. admonition:: Parameters required
+
+   .. csv-table::
+      :header: "Parameter name", "Type", "Symbol", "Description"
+      :widths: 10, 10, 10, 70
+
+       ``SS_pref``, scalar, :math:`p_{ref}`, Reference pressure.
+       ``SS_beta``, scalar, :math:`\beta`, Cap hardening (compressibility) parameter.
+       ``SS_m``, scalar, :math:`m`, Power exponent (shared with :ref:`StiffSoil_EL`).
+
+**StiffSoilCapLinearHardening**
+
+Simplified, linear alternative to ``StiffSoilCapHardening`` for the same ``CapPressure`` internal variable (used by the ``CapPressureLinear`` combination of :ref:`StiffSoilCap_YF`/:ref:`StiffSoilCap_PF`), with a constant hardening modulus :math:`p_{ref}/\beta` and the same one-way (compaction-only) behavior:
+
+.. math::
+   h = \begin{cases} \dfrac{p_{ref}}{\beta}\left\lvert \mathrm{tr}(\vec{m}) \right\rvert & \mathrm{tr}(\vec{m}) < 0 \\ 0 & \text{otherwise} \end{cases}
+
+.. admonition:: Parameters required
+
+   .. csv-table::
+      :header: "Parameter name", "Type", "Symbol", "Description"
+      :widths: 10, 10, 10, 70
+
+       ``SS_pref``, scalar, :math:`p_{ref}`, Reference pressure.
+       ``SS_beta``, scalar, :math:`\beta`, Cap hardening (compressibility) parameter.
 
