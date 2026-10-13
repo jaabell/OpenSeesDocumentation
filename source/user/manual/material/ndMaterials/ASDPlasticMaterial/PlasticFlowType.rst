@@ -99,10 +99,6 @@ Defines a plastic flow direction for use with :ref:`DruckerPrager_YF` (or other 
 ConstantDilatancy_PF
 """"""""""""""""""""
 
-.. note::
-
-   This component is implemented in the code but is currently commented out of ``gen_ASD_material_definitions_CPP.py``'s ``PF`` list, so it is **not** part of the compiled factory: ``nDMaterial ASDPlasticMaterial3D`` will not find any combination using ``ConstantDilatancy_PF`` (``nDMaterial ASDPlasticMaterial3D $tag list <YF>`` will not list it either). Use :ref:`DruckerPrager_PF` for an equivalent, currently-compiled constant-dilatancy flow rule (set its ``DP_etabar`` parameter directly).
-
 Von-Mises PF provides no volumetric change (dilatancy) during plasticity. On the other hand Drucker-Prager PF provides a constant negative volumetric change which is proportional to the current value of the :math:`k` parameter. This PF defines a controllable dilatancy during plasticity by specifying a constant dilatancy coeficient :math:`D`.
 
 
@@ -135,12 +131,17 @@ Von-Mises PF provides no volumetric change (dilatancy) during plasticity. On the
    * Dense sands (positive dilatancy initially, then contractancy)
    * Loose sands (continuous contractancy)
    
-   Monitor dilatancy effects (syntax only -- not runnable, since this component is not currently compiled, see note above):
+   The ratio of plastic volumetric strain to the norm of the deviatoric plastic strain is :math:`-D`. It can be
+   checked from the material's ``pstrain`` response (6 components; the first three are the normal components):
 
    .. code-block:: tcl
 
-       recorder Element -ele 1 -file vol_strain.out -time material 1 VolStrain
-       recorder Element -ele 1 -file j2_strain.out -time material 1 J2Strain
+       recorder Element -ele 1 -file pstrain.out -time material 1 pstrain
+
+   :download:`../ASDPlasticMaterial3D_ConstantDilatancyExample.tcl` pairs it with :ref:`VonMises_YF`
+   (internal variables ``BackStress(TensorLinearHardeningFunction):YieldStress(ScalarLinearHardeningFunction):``) in
+   uniaxial compressive strain and prints this ratio for :math:`D = 0.2, 0, -0.2`. It gives exactly
+   :math:`-0.2, 0, +0.2`.
 
 
 .. _`MohrCoulomb_PF`:
