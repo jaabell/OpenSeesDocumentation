@@ -163,7 +163,7 @@ Advanced Integration Methods
 .. _`ASDPlasticMaterial3DFullBackwardEuler`:
 
 Full Backward Euler
-'
+~~~~~~~~~~~~~~~~~~~
 
 ``Backward_Euler`` is a cutting-plane scheme: it iterates on the plastic multiplier alone and re-evaluates the flow direction at each iterate, without differentiating it. For flow directions that do not rotate during the return (von Mises, Drucker-Prager, the planar faces of Mohr-Coulomb, linear hardening) it already gives the exact implicit solution. ``Full_Backward_Euler`` solves the complete return-mapping system
 
