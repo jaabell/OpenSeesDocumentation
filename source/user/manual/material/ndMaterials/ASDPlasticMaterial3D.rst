@@ -158,6 +158,7 @@ Advanced Integration Methods
    * Shear components of the plastic correction: flow directions and yield-function gradients now use one Voigt convention (tensor components, with the plastic strain taking engineering shear). Before, closed-form components (von Mises, Drucker-Prager, ConstantDilatancy) applied half the shear correction and numerically differentiated ones double-counted it in ``Backward_Euler``. Paths with shear give different (correct) results; uniaxial and triaxial paths in the principal axes are unchanged.
    * The tangent is stored per material point. Before, all points of the same component combination shared one, so ``Continuum`` and the ``Numerical_Algorithmic`` tangents diverged in non-homogeneous models.
    * The explicit integrators never take a negative plastic multiplier (a substep that unloads is elastic).
+   * Mohr-Coulomb: ``Backward_Euler`` and ``Full_Backward_Euler`` return trial stresses beyond the tensile apex to the apex (see :ref:`MohrCoulomb_YF`); before, these points failed with both.
    * Drucker-Prager, Mohr-Coulomb and Hoek-Brown: see the notes on :ref:`DruckerPrager_YF`, :ref:`DruckerPrager_PF`, :ref:`MohrCoulomb_YF`, :ref:`MohrCoulomb_PF`, :ref:`HoekBrown_YF` and :ref:`HoekBrown_PF`.
 
 .. _`ASDPlasticMaterial3DFullBackwardEuler`:
