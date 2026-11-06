@@ -197,6 +197,7 @@ The following subsections contain information about **$eleType** and the number 
    :maxdepth: 1   
 
    elements/PML
+   elements/SplitElastic
 
 15. Misc.
 
