@@ -75,11 +75,15 @@ each half-property branch. These commands do not remove the internal connector.
 The elastic stiffness and mass are cached; ``update`` has no constitutive work.
 Current, initial and committed stiffness Rayleigh terms are identical here.
 
-``ExplicitDifference`` with a diagonal SOE requires the default lumped mass.
-In upstream OpenSees, ``Diagonal``/``MPIDiagonal`` extract the diagonal of a
-supplied matrix; they do not row-sum a consistent mass. Using ``-cMass`` with
-such a system loses mass. Use a full-matrix solver for consistent-mass analyses,
-or an SOE whose row-summing behavior has been independently verified.
+``ExplicitDifference`` with a diagonal SOE needs a lumped mass. The default
+``-lMass`` is already diagonal. ``Diagonal``/``MPIDiagonal`` sum each element
+matrix's columns onto the diagonal only when created with ``-lumped``; without
+it they keep only the diagonal of a supplied matrix, so ``-cMass`` (or any
+other element with consistent mass in the same model) loses mass. The generic
+solver commands (OpenSeesPy) accept ``-lumped``; the traditional Tcl
+``system Diagonal`` / ``system MPIDiagonal`` command ignored it in OpenSees up to
+November 2026 (fixed alongside this element). Use a full-matrix solver for
+consistent-mass analyses without ``-lumped``.
 
 Relative damping adds its own explicit stability restriction. For an isolated
 rigid differential mode with lumped branch mass ``rho*V_i/2``, its decay rate is
