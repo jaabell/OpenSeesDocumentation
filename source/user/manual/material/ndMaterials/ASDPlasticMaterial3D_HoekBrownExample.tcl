@@ -31,7 +31,7 @@ nDMaterial ASDPlasticMaterial3D 1 HoekBrown_YF HoekBrown_PF LinearIsotropic3D_EL
         YoungsModulus 10e9 PoissonsRatio 0.25 MassDensity 0 \
     End_Model_Parameters \
     Begin_Integration_Options \
-        integration_method Backward_Euler tangent_type Secant \
+        integration_method Full_Backward_Euler tangent_type Algorithmic \
     End_Integration_Options
 element stdBrick 1 1 2 4 3 5 6 8 7 1
 

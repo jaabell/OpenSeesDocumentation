@@ -54,11 +54,15 @@ Defines a plastic flow direction derived from the `Von Mises Yield Criterion <ht
 
 DruckerPrager_PF
 """"""""""""""""
-Defines a plastic flow direction for use with :ref:`DruckerPrager_YF` (or other yield functions). Unlike :ref:`VonMises_PF`, the deviatoric part is normalized to a unit vector and a separate, independently-specified parameter ``DP_etabar`` controls the volumetric (dilation) part, making this a **non-associated** flow rule in general (associated only if ``DP_etabar`` is set equal to the yield function's ``DP_eta``):
+Defines a plastic flow direction for use with :ref:`DruckerPrager_YF` (or other yield functions): the gradient of the Drucker-Prager potential :math:`g = \sqrt{J_2} + \bar\eta\, p`, with the dilation parameter ``DP_etabar`` in place of the friction slope. It is associated with :ref:`DruckerPrager_YF` when ``DP_etabar`` equals ``DP_eta``, and non-associated otherwise:
 
 .. math::
 
-        \mathbf{m} = \dfrac{\vec{s} - \vec{\alpha} }{ \sqrt{ \dfrac{1}{2}(\vec{s} - \vec{\alpha}) \cdot (\vec{s} - \vec{\alpha})}} + \dfrac{\bar\eta}{3} \vec{I}
+        \mathbf{m} = \dfrac{\vec{s} - \vec{\alpha} }{ 2\sqrt{ \dfrac{1}{2}(\vec{s} - \vec{\alpha}) : (\vec{s} - \vec{\alpha})}} + \dfrac{\bar\eta}{3} \vec{I}
+
+.. note::
+
+   Before 2026-11 the deviatoric part lacked the factor 2 in the denominator (twice the gradient), so ``DP_etabar = DP_eta`` was not associated, and for a given ``DP_etabar`` the dilatancy was half of what it is now.
 
 .. admonition:: Internal variables defined
 
@@ -69,7 +73,7 @@ Defines a plastic flow direction for use with :ref:`DruckerPrager_YF` (or other 
       :widths: 10, 10, 10, 70
 
       ``BackStress``, Rank-6 Tensor , :math:`\vec{\alpha}`,  "Backstress, definining the location in stress space for the axis of the Drucker-Prager cone. "
-      ``DP_cohesion``, Scalar , --,  "Unused by this component's own flow-direction formula; present only to match :ref:`DruckerPrager_YF`'s internal variables."
+      ``DP_cohesion``, Scalar , :math:`\kappa`,  "Not used by the flow direction; the hardening cohesion of :ref:`DruckerPrager_YF`."
 
 .. admonition:: Parameters required
 
@@ -149,11 +153,17 @@ Von-Mises PF provides no volumetric change (dilatancy) during plasticity. On the
 MohrCoulomb_PF
 """""""""""""""
 
-Non-associated plastic flow direction paired with :ref:`MohrCoulomb_YF`. The deviatoric shape of the plastic potential is the same smooth Mohr-Coulomb surface as the yield function, evaluated with the **friction** angle :math:`\varphi` (not the dilatancy angle) for the deviatoric part that gets numerically differentiated; the dilatancy angle :math:`\psi` is then applied afterwards, overriding the volumetric part of the resulting direction to :math:`\sin\psi/3` per the standard non-associated Mohr-Coulomb flow rule:
+Plastic flow direction paired with :ref:`MohrCoulomb_YF`: the gradient of the Mohr-Coulomb potential, which is the yield function with the dilatancy angle :math:`\psi` in place of the friction angle, corners rounded the same way (parameter ``MC_theta_T``, see :ref:`MohrCoulomb_YF`):
 
 .. math::
-   g(\vec{\sigma}) = \left(\cos\theta - \dfrac{\sin\theta\sin\varphi}{\sqrt{3}}\right)\sqrt{J_2} + \dfrac{I_1 \sin\varphi}{3} - c\cos\varphi \qquad
-   \mathbf{m} = \mathrm{dev}\left(\dfrac{\partial g}{\partial \vec{\sigma}}\right) + \dfrac{\sin\psi}{3}\vec{I}
+   g(\vec{\sigma}) = \left(\cos\theta - \dfrac{\sin\theta\sin\psi}{\sqrt{3}}\right)\sqrt{J_2} + \dfrac{I_1 \sin\psi}{3} - c\cos\psi \qquad
+   \mathbf{m} = \dfrac{\partial g}{\partial \vec{\sigma}}
+
+The gradient is computed by central differences (relative perturbation ``MC_ds``).
+
+.. note::
+
+   Before 2026-11 the deviatoric part of :math:`\mathbf{m}` was taken from the potential with :math:`\varphi` and only its volumetric part was set to :math:`\sin\psi/3`; for :math:`\psi \neq \varphi` the Lode-angle dependence of the flow now follows :math:`\psi`.
 
 Setting ``MC_psi`` to 0 gives zero dilatancy (deviatoric-only, isochoric plastic flow); setting it equal to ``MC_phi`` gives associated flow.
 
@@ -171,6 +181,7 @@ Setting ``MC_psi`` to 0 gives zero dilatancy (deviatoric-only, isochoric plastic
       ``MC_c``, Scalar, :math:`c`, "Cohesion."
       ``MC_ds``, Scalar, --, "Relative stress perturbation for the numerical flow-direction derivative."
       ``MC_psi``, Scalar, :math:`\psi`, "Dilatancy angle (degrees); 0 for zero dilatancy."
+      ``MC_theta_T``, Scalar, :math:`\theta_T`, "Lode angle (degrees) above which the corners are rounded, shared with :ref:`MohrCoulomb_YF`. 0 or not given: 29.9."
 
 .. admonition:: Usage in ASDPlasticMaterial3D
 
@@ -191,7 +202,11 @@ Non-associated plastic flow direction for :ref:`HoekBrown_YF`. The plastic poten
 .. math::
    g = \sigma_1 - \sigma_3 - \sigma_{ci}\left(\max(m_{b,\psi}\,\sigma_3/\sigma_{ci} + s,\, 0)\right)^a
 
-:math:`\mathbf{m} = \partial g/\partial \vec{\sigma}` is evaluated purely numerically (central differences with perturbation ``HB_ds``, scaled by the stress norm). Setting ``HB_mb_psi`` to 0 gives zero dilatancy; non-associated flow (:math:`m_{b,\psi} < m_b`) is essential here because an associated flow rule (:math:`m_{b,\psi}=m_b`) would predict unrealistically large dilation for a rock mass.
+with :math:`\sigma_1 \geq \sigma_3` compression positive, as in the yield function, and the same edge rounding (parameter ``HB_theta_T``, see :ref:`HoekBrown_YF`). :math:`\mathbf{m} = \partial g/\partial \vec{\sigma}` is evaluated by central differences (perturbation ``HB_ds``, scaled by the stress norm).
+
+.. note::
+
+   Before 2026-11 the potential took the principal stresses of the tension-positive stress, so its :math:`\sigma_3` was the most compressive one: under compression the argument of the power was negative and the flow reduced to that of :math:`\sigma_1 - \sigma_3` (no dilatancy, whatever ``HB_mb_psi``). Setting ``HB_mb_psi`` to 0 gives zero dilatancy; non-associated flow (:math:`m_{b,\psi} < m_b`) is essential here because an associated flow rule (:math:`m_{b,\psi}=m_b`) would predict unrealistically large dilation for a rock mass.
 
 .. admonition:: Internal variables defined
 
@@ -211,6 +226,7 @@ Non-associated plastic flow direction for :ref:`HoekBrown_YF`. The plastic poten
       ``HB_s``, scalar, :math:`s`, "Optional direct override for the derived :math:`s`; only used if :math:`> 0`."
       ``HB_a``, scalar, :math:`a`, "Optional direct override for the derived :math:`a`; only used if :math:`> 0`."
       ``HB_ds``, scalar, --, "Relative stress perturbation used for the numerical flow-direction derivative."
+      ``HB_theta_T``, scalar, :math:`\theta_T`, "Lode angle (degrees) above which the edges are rounded, shared with :ref:`HoekBrown_YF`. 0 or not given: 29.9."
 
 .. admonition:: Usage in ASDPlasticMaterial3D
 

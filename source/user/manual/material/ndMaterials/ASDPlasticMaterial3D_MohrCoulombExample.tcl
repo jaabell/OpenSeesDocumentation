@@ -26,7 +26,7 @@ nDMaterial ASDPlasticMaterial3D 1 MohrCoulomb_YF MohrCoulomb_PF LinearIsotropic3
         MassDensity 0 PoissonsRatio 0.3 YoungsModulus 50e6 \
     End_Model_Parameters \
     Begin_Integration_Options \
-        integration_method Backward_Euler tangent_type Secant \
+        integration_method Full_Backward_Euler tangent_type Algorithmic \
         f_absolute_tol 1e-4 stress_absolute_tol 1e-2 n_max_iterations 50 \
         return_to_yield_surface Disabled \
     End_Integration_Options

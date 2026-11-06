@@ -73,9 +73,13 @@ DruckerPrager_YF
 Defines a yield surface related to the `Drucker-Prager Yield Criterion <https://en.wikipedia.org/wiki/Drucker%E2%80%93Prager_yield_criterion>`_. Its actual implementation is:
 
 .. math::
-   f(\vec{\sigma}) = \sqrt{ \dfrac{1}{2}(\vec{s} - \vec{\alpha}) \cdot (\vec{s} - \vec{\alpha}) } + \eta\, p - \xi_c
+   f(\vec{\sigma}) = \sqrt{ \dfrac{1}{2}(\vec{s} - \vec{\alpha}) : (\vec{s} - \vec{\alpha}) } + \eta\, p - (\xi_c + \kappa)
 
-where :math:`p` is the mean stress (positive in compression) and :math:`\eta`, :math:`\xi_c` are **parameters** (not internal variables): :math:`\eta` is the friction slope and :math:`\xi_c` the (adjusted) cohesion intercept. A second internal variable, registered under the name ``DP_cohesion``, is required alongside ``BackStress`` (for consistency with the hardening-function machinery and with :ref:`DruckerPrager_PF`), but its current *value* does not itself appear in :math:`f` above -- only its hardening rate enters the plastic-consistency condition. In practice, set its hardening parameter to zero (as in the verified example below) unless you specifically want this secondary hardening effect.
+where :math:`p = \sigma_{kk}/3` is the mean stress (positive in tension), :math:`\eta` and :math:`\xi_c` are **parameters**: :math:`\eta` is the friction slope and :math:`\xi_c` the (adjusted) cohesion intercept, and :math:`\kappa` is the internal variable ``DP_cohesion``, a cohesion that hardens with its own hardening function and adds to :math:`\xi_c`. Give it an initial value of 0 (any initial value adds to :math:`\xi_c`), and set its hardening parameter to 0 for a cone without cohesion hardening.
+
+.. note::
+
+   Before 2026-11, :math:`\kappa` did not appear in :math:`f` although its hardening rate entered the consistency condition, so the implicit and explicit integrators disagreed whenever ``DP_cohesion`` hardened.
 
 .. admonition:: Internal variables defined
 
@@ -84,7 +88,7 @@ where :math:`p` is the mean stress (positive in compression) and :math:`\eta`, :
       :widths: 10, 10, 10, 70
 
       ``BackStress``, Rank-6 Tensor , :math:`\vec{\alpha}`,  "Backstress, definining the location in stress space for the axis of the Drucker-Prager cone. "
-      ``DP_cohesion``, Scalar , --,  "Secondary cohesion-like internal variable; see note above."
+      ``DP_cohesion``, Scalar , :math:`\kappa`,  "Hardening cohesion, added to :math:`\xi_c`; see above."
 
 .. admonition:: Parameters required
 
@@ -99,7 +103,7 @@ where :math:`p` is the mean stress (positive in compression) and :math:`\eta`, :
 
    DruckerPrager_YF with :ref:`ASDPlasticMaterial3D` provides access to:
 
-   * ``DP_cohesion`` - Current value of the secondary cohesion-like internal variable
+   * ``DP_cohesion`` - Current value of the hardening cohesion :math:`\kappa`
    * ``BackStress`` - Current backstress tensor
 
    Enhanced stress measures are particularly useful (assuming material tag 1 is attached to element 1):
@@ -124,7 +128,12 @@ A smooth, Lode-angle-dependent approximation of the `Mohr-Coulomb Yield Criterio
 .. math::
    f(\vec{\sigma}) = \left(\cos\theta - \dfrac{\sin\theta\sin\varphi}{\sqrt{3}}\right)\sqrt{J_2} + \dfrac{I_1 \sin\varphi}{3} - c\cos\varphi
 
-This reduces exactly to the classical Mohr-Coulomb criterion on the triaxial meridians (:math:`\theta=\pm30^\circ`); the unconfined compressive strength at :math:`\sigma_3=0` is :math:`\sigma_{ucs}=2c\cos\varphi/(1-\sin\varphi)`, used to verify this component below. ``YIELD_FUNCTION_HARDENING`` is not implemented separately: this yield function is perfectly-plastic (no internal hardening state beyond the usual unused ``BackStress`` placeholder).
+This is the exact Mohr-Coulomb criterion; its unconfined compressive strength is :math:`\sigma_{ucs}=2c\cos\varphi/(1-\sin\varphi)`. The exact surface has corners on the triaxial compression and extension meridians (:math:`\theta=\pm30^\circ`), where its gradient does not exist and return-mapping algorithms stall. Above the Lode angle :math:`\theta_T` (parameter ``MC_theta_T``, default :math:`29.9^\circ`) the Lode factor is therefore rounded as in Abbo & Sloan (1995), "A smooth hyperbolic approximation to the Mohr-Coulomb yield criterion", *Computers & Structures* 54(3):
+
+.. math::
+   \cos\theta - \dfrac{\sin\theta\sin\varphi}{\sqrt{3}} \;\longrightarrow\; A - B\sin 3\theta \qquad (|\theta| > \theta_T)
+
+with :math:`A`, :math:`B` chosen so that the factor and its slope are continuous at :math:`\theta_T`; the slope is then zero at :math:`\pm30^\circ` and the gradient is smooth everywhere. The rounded surface lies slightly inside the exact one: for :math:`\varphi = 30^\circ` the strength on the compression meridian (including the UCS) is lower by about 0.15% for :math:`\theta_T = 29.9^\circ`, 0.45% for 29.5 and 1.5% for 29. The stress derivative is computed by central differences (relative perturbation ``MC_ds``). The same function, with :math:`\psi` in place of :math:`\varphi`, is the potential of :ref:`MohrCoulomb_PF`. This yield function is perfectly plastic (``YIELD_FUNCTION_HARDENING`` returns zero; ``BackStress`` is an unused placeholder).
 
 .. admonition:: Internal variables defined
 
@@ -139,10 +148,11 @@ This reduces exactly to the classical Mohr-Coulomb criterion on the triaxial mer
       ``MC_phi``, Scalar, :math:`\varphi`, "Friction angle (degrees)."
       ``MC_c``, Scalar, :math:`c`, "Cohesion."
       ``MC_ds``, Scalar, --, "Relative stress perturbation for the numerical stress-derivative of the yield function."
+      ``MC_theta_T``, Scalar, :math:`\theta_T`, "Lode angle (degrees) above which the corners are rounded. 0 or not given: 29.9. 30 or more: exact surface with sharp corners."
 
 .. admonition:: Usage in ASDPlasticMaterial3D
 
-   Pair with :ref:`MohrCoulomb_PF` and either :ref:`LinearIsotropic3D_EL` or :ref:`DuncanChang_EL`. Verified with an unconfined-compression example (:download:`../ASDPlasticMaterial3D_MohrCoulombExample.tcl`, see :ref:`ASDPlasticMaterial3D`): got peak axial stress :math:`3.4645\times10^4` Pa vs. expected :math:`2c\cos\varphi/(1-\sin\varphi) = 3.4641\times10^4` Pa (0.01% relative error), with :math:`\varphi=30^\circ`, :math:`c=10` kPa.
+   Use ``integration_method Full_Backward_Euler tangent_type Algorithmic`` (see :ref:`ASDPlasticMaterial3DFullBackwardEuler`): with ``Backward_Euler`` and a ``Secant`` or ``Continuum`` tangent, the global iteration can fail at peak strength near the rounded corners unless ``MC_theta_T`` is lowered to about 29. Pair with :ref:`MohrCoulomb_PF` and either :ref:`LinearIsotropic3D_EL` or :ref:`DuncanChang_EL`. Verified with an unconfined-compression example (:download:`../ASDPlasticMaterial3D_MohrCoulombExample.tcl`, see :ref:`ASDPlasticMaterial3D`): with :math:`\varphi=30^\circ`, :math:`c=10` kPa and the default rounding, the peak axial stress is :math:`3.4589\times10^4` Pa vs. :math:`2c\cos\varphi/(1-\sin\varphi) = 3.4641\times10^4` Pa for the exact surface (0.15% lower, the effect of the rounding).
 
    .. code-block:: tcl
 
@@ -174,7 +184,9 @@ The rock-mass parameters :math:`m_b`, :math:`s` and :math:`a` are, by default, d
 
 Setting ``HB_mb``, ``HB_s`` and/or ``HB_a`` to a value greater than zero overrides the corresponding derived quantity (the override check is simply "> 0", so these three parameters cannot be used to force a value of exactly zero). For intact rock (:math:`GSI=100`, :math:`D=0`) the derived values reduce to :math:`m_b=m_i`, :math:`s=1`, :math:`a=0.5`, and the rock-mass unconfined compressive strength is :math:`\sigma_{cm} = \sigma_{ci}\,s^a`.
 
-The stress-derivative of the yield function is computed purely numerically (central differences with perturbation ``HB_ds``, scaled by the stress norm), rather than analytically.
+The shear surface is evaluated in invariants, :math:`\sigma_1 - \sigma_3 = 2\sqrt{J_2}\cos\theta` and :math:`\sigma_3 = -\sigma_m - \tfrac{2}{\sqrt{3}}\sqrt{J_2}\sin(\theta + 2\pi/3)` (:math:`\sigma_m` tension positive). Both Lode factors have a nonzero slope at :math:`\theta=\pm30^\circ` (the triaxial meridians), which are the edges of the surface. Above :math:`\theta_T` (parameter ``HB_theta_T``, default :math:`29.9^\circ`) each factor is rounded as :math:`A - B\sin 3\theta`, continuous with its slope at :math:`\theta_T` and flat at :math:`\pm30^\circ` (the construction of Abbo & Sloan 1995 for Mohr-Coulomb). Near zero confinement the strength is very sensitive to :math:`\sigma_3` (:math:`s` is small), so the rounding must stay close to :math:`30^\circ`: for :math:`GSI=50`, :math:`m_i=10`, the uniaxial strength is lower by 0.7% for :math:`\theta_T=29.9^\circ` (3.5% for 29.5, 6.9% for 29), the triaxial compression strength at 5 MPa confinement by 0.15% and the extension strength by 0.05%.
+
+The stress derivative is computed by central differences (perturbation ``HB_ds``, scaled by the stress norm).
 
 .. admonition:: Internal variables defined
 
@@ -200,10 +212,11 @@ The stress-derivative of the yield function is computed purely numerically (cent
       ``HB_s``, scalar, :math:`s`, "Optional direct override for the derived :math:`s`; only used if :math:`> 0`."
       ``HB_a``, scalar, :math:`a`, "Optional direct override for the derived :math:`a`; only used if :math:`> 0`."
       ``HB_ds``, scalar, --, "Relative stress perturbation used for the numerical stress-derivative of the yield function."
+      ``HB_theta_T``, scalar, :math:`\theta_T`, "Lode angle (degrees) above which the edges are rounded. 0 or not given: 29.9. 30 or more: exact surface with sharp edges."
 
 .. admonition:: Usage in ASDPlasticMaterial3D
 
-   ``HoekBrown_YF`` is intended to be paired with :ref:`HoekBrown_PF` (non-associated flow), and can be used with either :ref:`LinearIsotropic3D_EL` or :ref:`DuncanChang_EL`. List all compiled combinations with:
+   Use ``integration_method Full_Backward_Euler tangent_type Algorithmic`` (see :ref:`ASDPlasticMaterial3DFullBackwardEuler`). ``HoekBrown_YF`` is intended to be paired with :ref:`HoekBrown_PF` (non-associated flow), and can be used with either :ref:`LinearIsotropic3D_EL` or :ref:`DuncanChang_EL`. List all compiled combinations with:
 
    .. code-block:: tcl
 

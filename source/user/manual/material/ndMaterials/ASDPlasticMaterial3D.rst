@@ -33,8 +33,10 @@ The complete command looks as follows::
          stress_absolute_tol $double_value
          n_max_iterations $int_value
          return_to_yield_surface (string) : Disabled | One_Step_Return | Iterative_Return
-         integration_method (string) : Forward_Euler | Forward_Euler_Subincrement | Backward_Euler | Backward_Euler_LineSearch | Modified_Euler_Error_Control | Runge_Kutta_45_Error_Control | Runge_Kutta_45_Error_Control_old
-         tangent_type (string) : Elastic | Numerical_Algorithmic_FirstOrder | Numerical_Algorithmic_SecondOrder | Continuum | Secant
+         integration_method (string) : Forward_Euler | Forward_Euler_Subincrement | Backward_Euler | Backward_Euler_LineSearch | Full_Backward_Euler | Modified_Euler_Error_Control | Runge_Kutta_45_Error_Control | Runge_Kutta_45_Error_Control_old
+         derivatives (string) : Numerical | Closed_Form
+         fd_perturbation $double_value
+         tangent_type (string) : Elastic | Numerical_Algorithmic_FirstOrder | Numerical_Algorithmic_SecondOrder | Continuum | Secant | Algorithmic
          rk45_dT_min $double_value
          rk45_niter_max $int_value
       End_Integration_Options
@@ -137,6 +139,7 @@ Advanced Integration Methods
    ``Forward_Euler_Subincrement``, "Forward Euler with automatic subincrementation for large strain increments"
    ``Backward_Euler``, "Implicit backward Euler method for better stability"
    ``Backward_Euler_LineSearch``, "Backward Euler with line search for enhanced convergence"
+   ``Full_Backward_Euler``, "Fully implicit Backward Euler (closest-point projection): Newton on stress, internal variables and plastic multiplier together, using the derivatives of the yield function, flow direction and hardening. Starts from the ``Backward_Euler`` state and keeps it if Newton does not converge. With ``tangent_type Algorithmic`` it gives the exact consistent tangent. See :ref:`ASDPlasticMaterial3DFullBackwardEuler`."
    ``Modified_Euler_Error_Control``, "Modified Euler method with adaptive error control"
    ``Runge_Kutta_45_Error_Control``, "4th/5th order Runge-Kutta with adaptive error control"
    ``Runge_Kutta_45_Error_Control_old``, "Older implementation of the RK45 error-controlled integrator, kept for backward compatibility"
@@ -148,6 +151,36 @@ Advanced Integration Methods
    .. note::
 
       Older versions (and older documentation) called this keyword ``method``. The parser only recognizes ``integration_method``; ``method`` is silently ignored and the default is used instead.
+
+
+.. admonition:: Changes in 2026-11 that affect results
+
+   * Shear components of the plastic correction: flow directions and yield-function gradients now use one Voigt convention (tensor components, with the plastic strain taking engineering shear). Before, closed-form components (von Mises, Drucker-Prager, ConstantDilatancy) applied half the shear correction and numerically differentiated ones double-counted it in ``Backward_Euler``. Paths with shear give different (correct) results; uniaxial and triaxial paths in the principal axes are unchanged.
+   * The tangent is stored per material point. Before, all points of the same component combination shared one, so ``Continuum`` and the ``Numerical_Algorithmic`` tangents diverged in non-homogeneous models.
+   * The explicit integrators never take a negative plastic multiplier (a substep that unloads is elastic).
+   * Drucker-Prager, Mohr-Coulomb and Hoek-Brown: see the notes on :ref:`DruckerPrager_YF`, :ref:`DruckerPrager_PF`, :ref:`MohrCoulomb_YF`, :ref:`MohrCoulomb_PF`, :ref:`HoekBrown_YF` and :ref:`HoekBrown_PF`.
+
+.. _`ASDPlasticMaterial3DFullBackwardEuler`:
+
+Full Backward Euler
+'
+
+``Backward_Euler`` is a cutting-plane scheme: it iterates on the plastic multiplier alone and re-evaluates the flow direction at each iterate, without differentiating it. For flow directions that do not rotate during the return (von Mises, Drucker-Prager, the planar faces of Mohr-Coulomb, linear hardening) it already gives the exact implicit solution. ``Full_Backward_Euler`` solves the complete return-mapping system
+
+.. math::
+
+   \boldsymbol{\sigma} - \boldsymbol{\sigma}^{tr} + \Delta\lambda\, \mathbf{E} : \mathbf{m}(\boldsymbol{\sigma}, \mathbf{q}) = 0, \qquad
+   \mathbf{q} - \mathbf{q}_n - \Delta\lambda\, \mathbf{h}(\boldsymbol{\sigma}, \mathbf{q}) = 0, \qquad
+   f(\boldsymbol{\sigma}, \mathbf{q}) = 0
+
+with Newton, where :math:`\mathbf{q}` collects all internal variables and :math:`\mathbf{E}` is the elastic stiffness at the committed stress. It differs from ``Backward_Euler`` where the flow direction rotates during the return (curved surfaces such as Hoek-Brown, the rounded corners of Mohr-Coulomb and Hoek-Brown, nonlinear hardening), and its main benefit is the consistent tangent: with ``tangent_type Algorithmic`` the global Newton iteration converges quadratically. On a non-homogeneous Mohr-Coulomb test it needed about half the global iterations of ``Backward_Euler`` with ``Secant``.
+
+The Jacobian is built with the ``derivatives`` option:
+
+* ``Numerical`` (default): central differences of the residual with relative perturbation ``fd_perturbation`` (default 1e-6).
+* ``Closed_Form``: closed-form derivatives where the components provide them (the stress derivative of every yield function, and the stress derivative of the flow direction for ``VonMises_PF``), differences for the rest.
+
+Recommended for Mohr-Coulomb and Hoek-Brown: ``integration_method Full_Backward_Euler tangent_type Algorithmic``. Near the rounded triaxial corners of these surfaces (see :ref:`MohrCoulomb_YF`, :ref:`HoekBrown_YF`), ``Backward_Euler`` with ``Secant`` or ``Continuum`` can fail to converge globally at peak strength; if it must be used there, a smaller rounding angle (``MC_theta_T`` / ``HB_theta_T`` of 29) restores convergence at some cost in strength.
 
 
 .. _`ASDPlasticMaterial3DTangentOperators`:
@@ -166,6 +199,7 @@ Tangent Operator Types
    ``Numerical_Algorithmic_SecondOrder``, "Computes algorithmic tangent using second-order finite differences (more accurate but slower)"
    ``Continuum``, "Returns the continuum tangent operator"
    ``Secant``, "Returns the average of continuum and elastic tangents"
+   ``Algorithmic``, "Exact consistent (algorithmic) tangent from the Newton Jacobian of ``Full_Backward_Euler``; with the other integration methods it is computed like ``Numerical_Algorithmic_FirstOrder``"
 
 .. admonition:: Tangent Operator Selection
 
@@ -191,12 +225,14 @@ Integration Options
    $return_to_yield_surface, |string|, "Whether/how to correct the stress back onto the yield surface after integration. One of ``Disabled``, ``One_Step_Return`` or ``Iterative_Return``. Any other value is treated as ``One_Step_Return``. Default: ``One_Step_Return``."
    $integration_method, |string|, "Constitutive integration method. See :ref:`ASDPlasticMaterial3DIntegrationMethods` for options. Default: ``Backward_Euler``."
    $tangent_type, |string|, "Tangent operator computation method. See :ref:`ASDPlasticMaterial3DTangentOperators` for options. Default: ``Secant``."
+   $derivatives, |string|, "Derivatives used by ``Full_Backward_Euler``: ``Numerical`` or ``Closed_Form``. See :ref:`ASDPlasticMaterial3DFullBackwardEuler`. Default: ``Numerical``."
+   $fd_perturbation, |float|, "Relative perturbation of the numerical derivatives of ``Full_Backward_Euler``. Default: 1e-6."
    $rk45_dT_min, |float|, "Minimum pseudo-time sub-increment allowed for the ``Runge_Kutta_45_Error_Control`` family of methods. Default: 1e-2."
    $rk45_niter_max, |integer|, "Maximum number of sub-increments allowed for the ``Runge_Kutta_45_Error_Control`` family of methods. Default: 110."
 
 .. admonition:: Keyword names
 
-   The keywords actually recognized inside ``Begin_Integration_Options`` ... ``End_Integration_Options`` are exactly as listed above (``f_absolute_tol``, ``stress_absolute_tol``, ``n_max_iterations``, ``return_to_yield_surface``, ``integration_method``, ``tangent_type``, ``rk45_dT_min``, ``rk45_niter_max``). Any other keyword is silently ignored. Older names such as ``f_relative_tol``/``stress_relative_tol``/``method``/``tangent_operator`` are **not** recognized by the parser.
+   The keywords actually recognized inside ``Begin_Integration_Options`` ... ``End_Integration_Options`` are exactly as listed above (``f_absolute_tol``, ``stress_absolute_tol``, ``n_max_iterations``, ``return_to_yield_surface``, ``integration_method``, ``derivatives``, ``fd_perturbation``, ``tangent_type``, ``rk45_dT_min``, ``rk45_niter_max``). Any other keyword is silently ignored. Older names such as ``f_relative_tol``/``stress_relative_tol``/``method``/``tangent_operator`` are **not** recognized by the parser.
 
 The default integration method is **Backward_Euler** (an implicit scheme) with a **Secant** tangent operator; this was changed from the previous defaults of ``Runge_Kutta_45_Error_Control`` with an ``Elastic`` tangent. ``Runge_Kutta_45_Error_Control`` remains available and uses the classical RK45 ODE integration algorithm, employing a 4th-order prediction of the stress increment together with a 5th-order prediction to estimate the integration error. In this scheme the strain increment provided by the element to the Gauss point is sub-divided into sub-increments, a process which is automated such that the provided **$stress_absolute_tol** is met, subject to the ``rk45_dT_min``/``rk45_niter_max`` limits. This method is a robust standard method applicable across all possible combinations of components, although other approaches may be preferable for specific cases.
 
