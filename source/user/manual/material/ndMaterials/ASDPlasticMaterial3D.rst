@@ -265,7 +265,7 @@ Other Features
 
 .. admonition:: Enhanced Responses  (`setResponse` and `getResponse` behavior)
 
-    * *Basic responses*. ``stresses`` for stress, ``strains`` for strains, and ``pstrains`` for plastic strains. 
+    * *Basic responses*. ``stresses`` (or ``stress``) for stress, ``strains`` (or ``strain``) for strains, and ``pstrains`` (or ``pstrain``, ``plasticStrain``) for plastic strains, with components named ``sigma11 sigma22 sigma33 sigma12 sigma23 sigma13``, ``eps11`` ... and ``epsP11`` ... (MPCO keys ``material.stress``, ``material.strain``). 
     * *Enhanced stress measures*. ``eqpstrain`` for equivalent plastic strain :math:`\sqrt{2/3\,\varepsilon^p:\varepsilon^p}` (also available as ``equivalentPlasticStrain`` or ``EquivalentPlasticStrain``, the name other ASD materials and the MPCO recorder's ``material.equivalentPlasticStrain`` use), ``PStress`` for mean stress (:math:`p = (σ_{11}+σ_{22}+σ_{33})/3`), ``J2Stress`` for J2 invariant of stress.
     * *Enhanced strain measures*. ``VolStrain`` for volumetric strain (:math:`ε_v = ε_{11}+ε_{22}+ε_{33}`), ``J2Strain`` for J2 invariant of strain.
     * *Internal variables*. You can request any and all internal variables by their specific name as an output. A name that is neither a response above nor an internal variable of the chosen model gives no response.
