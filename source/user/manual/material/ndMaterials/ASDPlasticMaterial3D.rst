@@ -274,7 +274,8 @@ Other Features
 
    * *State variable updates*. Can update ``stress``, ``strain``, ``plasticStrain`` and their ``trial...`` variants directly.
    * *Parameter updates*. Can update any model parameter by name using the generic parameter system.
-   * *Special K0 operations*. ``K02D`` and ``K03D`` for setting K0 stress states in 2D/3D conditions.
+   * *Special K0 operations*. ``K03D`` sets :math:`\sigma_{11} = \sigma_{22} = K_0\,\sigma_{33}` (vertical axis 3) and ``K02D`` sets :math:`\sigma_{11} = \sigma_{33} = K_0\,\sigma_{22}` (vertical axis 2) on the committed stress; the trial stress is set to the same values, so ``eleResponse``/recorders return the new state immediately. Shear components are not changed. Stresses are tension-positive, so a positive :math:`K_0` simply scales the (negative) vertical stress. See :ref:`ASDPlasticMaterial3D_geostatic`.
+   * *Elastic stage*. ``updateMaterialStage`` switches the material between stage ``0`` (elastic only: the elastic law gives the stress, there is no yield check, plastic strain and internal variables keep their committed values and the tangent is elastic) and stage ``1`` (elastoplastic, the default, continuing from the committed state; a stress left outside the yield surface is returned to it on the next step). This works for every yield function, flow rule and elasticity combination. See :ref:`ASDPlasticMaterial3D_geostatic`.
    * *Stress increments*. ``trialStressIncrement`` adds the same value to the trial ``XX``, ``YY`` and ``ZZ`` normal stress components simultaneously; ``trialStressIncrementXX``/``YY``/``ZZ``/``XY``/``YZ``/``XZ`` add to one specific trial stress component. ``commitStressIncrementXX``/``YY``/``ZZ``/``XY``/``YZ``/``XZ`` do the same on the *committed* stress (there is no plain, all-components ``commitStressIncrement``, unlike the trial version).
    * *Effect on InitialP0*. Setting ``stress``, ``strain``, ``trialStrain``, ``trialStress``, or any of the ``trialStressIncrement...``/``commitStressIncrement...`` targets above marks the material as having its stress "set externally"; this disables the automatic ``InitialP0`` assignment on the first call to ``setTrialStrain`` (see the ``InitialP0`` note above) so that the externally imposed stress state is not silently overwritten.
 
@@ -428,6 +429,78 @@ Example: Parameter Updates During Analysis
 .. note::
 
    The plain Tcl ``setParameter`` command only carries a single scalar value (via ``-value``), so it cannot be used to set a full 6-component ``stress``/``strain``/``trialStress``/``trialStrain`` state in one call, even though those names are accepted by the material's own ``setParameter``/``updateParameter`` (which do accept a full ``Vector`` when driven directly, e.g. from Python through the lower-level parameter API). From Tcl, use the per-component ``trialStressIncrement{XX,YY,ZZ,XY,YZ,XZ}``/``commitStressIncrement{XX,YY,ZZ,XY,YZ,XZ}`` targets instead, one scalar ``setParameter`` call per component.
+
+.. _ASDPlasticMaterial3D_geostatic:
+
+Example: Geostatic Initialization (Elastic Stage and K0)
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+A common way to build an initial geostatic state is to apply gravity with the soil elastic, impose the horizontal
+stresses :math:`\sigma_h = K_0\,\sigma_v`, and then switch plasticity on. Elastic gravity gives
+:math:`\sigma_h/\sigma_v = \nu/(1-\nu)`, which for small :math:`\nu` or low cohesion is below the active limit,
+so a plastic gravity step would yield the soil before :math:`K_0` is applied.
+
+The stage can be changed in two ways:
+
+* **Per material tag**: ``updateMaterialStage -material $matTag -stage 0|1`` (as for ``PressureDependMultiYield``).
+  The stage is stored per material tag (``MaterialStageParameter`` stops at the first element that accepts it),
+  so it applies to all instances of that tag in the process; in a parallel (OpenSeesMP) run every process that has
+  elements with that material must issue the command.
+* **Per element**, through a parameter, with the parameter name ``updateMaterialStage``::
+
+     parameter $p
+     foreach e $soilElements { addToParameter $p element $e updateMaterialStage }
+     updateParameter $p 0   ;# elastic
+     ...
+     updateParameter $p 1   ;# elastoplastic
+
+  This sets the stage of those material instances only, and it takes precedence over the per-tag stage for them,
+  so do not mix both routes on the same elements. The name ``materialState`` is also accepted by the material, but
+  some elements (for example ``stdBrick``) intercept every parameter name containing ``material``;
+  ``updateMaterialStage`` reaches the material through ``FourNodeTetrahedron``, ``TenNodeTetrahedron``,
+  ``BezierTet10``, ``stdBrick``, ``bbarBrick`` and ``SSPbrick``.
+
+``K03D`` (or ``K02D``) is applied the same way, element by element. It changes only the normal stresses: shear stresses
+present after the gravity step are kept (an elastic gravity step on an unstructured or tetrahedral mesh produces small
+shear stresses, which can make the shallowest, least confined elements yield after the switch to stage 1 when the
+cohesion is zero).
+
+The example below (1 x 1 x 4 m column of ``FourNodeTetrahedron`` elements, Mohr-Coulomb with :math:`\phi = 30^\circ`,
+:math:`c = 5` kPa, :math:`\nu = 0.1`) prints the range of :math:`\sigma_{xx}/\sigma_{zz}` over all elements:
+
+.. admonition:: TCL Geostatic Initialization
+
+    .. code-block:: tcl
+
+        parameter 1
+        foreach el [getEleTags] { addToParameter 1 element $el updateMaterialStage }
+        parameter 2
+        foreach el [getEleTags] { addToParameter 2 element $el K03D }
+
+        # 1. elastic gravity
+        updateParameter 1 0
+        pattern Plain 1 Linear { eleLoad -ele {*}[getEleTags] -type -selfWeight 1 1 1 }
+        analyze 10
+        loadConst -time 0.0
+
+        # 2. K0 stress state
+        updateParameter 2 0.5
+
+        # 3. elastoplastic from here on
+        updateParameter 1 1
+        integrator LoadControl 0.0
+        analyze 5
+
+.. code-block:: none
+
+   stage 0, after gravity:            sxx/szz in (0.11111, 0.11111)
+   after K03D (no analysis step):     sxx/szz in (0.50000, 0.50000)
+   stage 1, after 5 zero-load steps:  sxx/szz in (0.50000, 0.50000)
+
+The same model with a plastic gravity step instead yields during gravity (:math:`\sigma_{xx}/\sigma_{zz}` up to 0.25
+near the top before :math:`K_0` is applied).
+
+Full script: :download:`ASDPlasticMaterial3D_GeostaticK0Example.tcl <ASDPlasticMaterial3D_GeostaticK0Example.tcl>`
 
 Example: Integration Method Selection
 """"""""""""""""""""""""""""""""""""""""
