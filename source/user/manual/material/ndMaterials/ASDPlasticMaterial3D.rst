@@ -469,7 +469,7 @@ cohesion is zero).
 For level ground the shear stresses can be removed after ``K03D`` with the ``zeroShearStress`` parameter, applied the
 same way (``updateParameter $p 1``; ``0`` does nothing). Use it with care:
 
-* On quadratic elements (``TenNodeTetrahedron``, ``BezierTet10``, 20/27-node bricks) an elastic gravity step on level
+* On quadratic elements (tested with ``TenNodeTetrahedron`` and ``BezierTet10``) an elastic gravity step on level
   ground leaves essentially no shear, so the option has no effect.
 * On linear tetrahedra (``FourNodeTetrahedron``) the gravity shear is part of the discrete equilibrium (a
   constant-stress element cannot represent a stress that varies linearly with depth without it). Zeroing it leaves
