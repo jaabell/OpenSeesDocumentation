@@ -275,6 +275,7 @@ Other Features
    * *State variable updates*. Can update ``stress``, ``strain``, ``plasticStrain`` and their ``trial...`` variants directly.
    * *Parameter updates*. Can update any model parameter by name using the generic parameter system.
    * *Special K0 operations*. ``K03D`` sets :math:`\sigma_{11} = \sigma_{22} = K_0\,\sigma_{33}` (vertical axis 3) and ``K02D`` sets :math:`\sigma_{11} = \sigma_{33} = K_0\,\sigma_{22}` (vertical axis 2) on the committed stress; the trial stress is set to the same values, so ``eleResponse``/recorders return the new state immediately. Shear components are not changed. Stresses are tension-positive, so a positive :math:`K_0` simply scales the (negative) vertical stress. See :ref:`ASDPlasticMaterial3D_geostatic`.
+   * *Zero shear*. ``zeroShearStress`` with a non-zero value sets :math:`\sigma_{12} = \sigma_{23} = \sigma_{13} = 0` on the committed and trial stress (a zero value does nothing). See :ref:`ASDPlasticMaterial3D_geostatic` for when this is appropriate.
    * *Elastic stage*. ``updateMaterialStage`` switches the material between stage ``0`` (elastic only: the elastic law gives the stress, there is no yield check, plastic strain and internal variables keep their committed values and the tangent is elastic) and stage ``1`` (elastoplastic, the default, continuing from the committed state; a stress left outside the yield surface is returned to it on the next step). This works for every yield function, flow rule and elasticity combination. See :ref:`ASDPlasticMaterial3D_geostatic`.
    * *Stress increments*. ``trialStressIncrement`` adds the same value to the trial ``XX``, ``YY`` and ``ZZ`` normal stress components simultaneously; ``trialStressIncrementXX``/``YY``/``ZZ``/``XY``/``YZ``/``XZ`` add to one specific trial stress component. ``commitStressIncrementXX``/``YY``/``ZZ``/``XY``/``YZ``/``XZ`` do the same on the *committed* stress (there is no plain, all-components ``commitStressIncrement``, unlike the trial version).
    * *Effect on InitialP0*. Setting ``stress``, ``strain``, ``trialStrain``, ``trialStress``, or any of the ``trialStressIncrement...``/``commitStressIncrement...`` targets above marks the material as having its stress "set externally"; this disables the automatic ``InitialP0`` assignment on the first call to ``setTrialStrain`` (see the ``InitialP0`` note above) so that the externally imposed stress state is not silently overwritten.
@@ -464,6 +465,21 @@ The stage can be changed in two ways:
 present after the gravity step are kept (an elastic gravity step on an unstructured or tetrahedral mesh produces small
 shear stresses, which can make the shallowest, least confined elements yield after the switch to stage 1 when the
 cohesion is zero).
+
+For level ground the shear stresses can be removed after ``K03D`` with the ``zeroShearStress`` parameter, applied the
+same way (``updateParameter $p 1``; ``0`` does nothing). Use it with care:
+
+* On quadratic elements (``TenNodeTetrahedron``, ``BezierTet10``, 20/27-node bricks) an elastic gravity step on level
+  ground leaves essentially no shear, so the option has no effect.
+* On linear tetrahedra (``FourNodeTetrahedron``) the gravity shear is part of the discrete equilibrium (a
+  constant-stress element cannot represent a stress that varies linearly with depth without it). Zeroing it leaves
+  unbalanced nodal forces; the following steps regenerate the shear and can make shallow, weakly confined elements
+  yield more than without the option. In a cohesionless 1 x 1 x 4 m column (:math:`\nu = 0.1`, :math:`K_0 = 0.5`) the
+  range of :math:`\sigma_{xx}/\sigma_{zz}` after the switch to stage 1 was 0.496-0.548 without it and
+  0.475-0.561 with it.
+* On sloping ground or under existing structures the shear stresses are physical; do not remove them. There a
+  :math:`K_0` stress state is generally not in equilibrium either, and an elastic gravity stage (with
+  :math:`\nu` chosen to give the desired :math:`\nu/(1-\nu)`) followed by the switch to stage 1 is the usual approach.
 
 The example below (1 x 1 x 4 m column of ``FourNodeTetrahedron`` elements, Mohr-Coulomb with :math:`\phi = 30^\circ`,
 :math:`c = 5` kPa, :math:`\nu = 0.1`) prints the range of :math:`\sigma_{xx}/\sigma_{zz}` over all elements:
